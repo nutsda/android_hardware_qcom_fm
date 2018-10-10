@@ -78,7 +78,6 @@ enum search_dir_t {
     SCAN_DN
 };
 
-static JNIEnv *g_jEnv = NULL;
 static JavaVM *g_jVM = NULL;
 
 namespace android {
@@ -126,7 +125,6 @@ typedef void (*fm_enable_sm_cb) (int status);
 static JNIEnv *mCallbackEnv = NULL;
 static jobject mCallbacksObj = NULL;
 static bool mCallbacksObjCreated = false;
-static jfieldID sCallbacksField;
 
 static jclass javaClassRef;
 static jmethodID method_psInfoCallback;
@@ -271,7 +269,7 @@ void fm_rt_update_cb(char *rt)
 {
     ALOGD("RT_EVT: " );
     jbyteArray rt_buff = NULL;
-    int i,len;
+    int len;
 
     if (!checkCallbackThread())
         return;
@@ -288,7 +286,6 @@ void fm_rt_update_cb(char *rt)
     }
 
     mCallbackEnv->SetByteArrayRegion(rt_buff, 0, len,(jbyte *)rt);
-    jbyte* bytes= mCallbackEnv->GetByteArrayElements(rt_buff,0);
 
     mCallbackEnv->CallVoidMethod(mCallbacksObj, method_rtCallback,rt_buff);
     mCallbackEnv->DeleteLocalRef(rt_buff);
@@ -297,7 +294,7 @@ void fm_rt_update_cb(char *rt)
 void fm_ps_update_cb(char *ps)
 {
     jbyteArray ps_data = NULL;
-    int i,len;
+    int len;
     int numPs;
     if (!checkCallbackThread())
         return;
@@ -313,7 +310,6 @@ void fm_ps_update_cb(char *ps)
     }
 
     mCallbackEnv->SetByteArrayRegion(ps_data, 0, len,(jbyte *)ps);
-    jbyte* bytes= mCallbackEnv->GetByteArrayElements(ps_data,0);
     mCallbackEnv->CallVoidMethod(mCallbacksObj, method_psInfoCallback,ps_data);
     mCallbackEnv->DeleteLocalRef(ps_data);
 }
@@ -348,7 +344,7 @@ void fm_ert_update_cb(char *ert)
 {
     ALOGD("ERT_EVT");
     jbyteArray ert_buff = NULL;
-    int i,len;
+    int len;
 
     if (!checkCallbackThread())
         return;
@@ -373,7 +369,7 @@ void fm_ext_country_code_cb(char *ecc)
 {
     ALOGI("Extended Contry code ");
     jbyteArray ecc_buff = NULL;
-    int i,len;
+    int len;
 
     if (!checkCallbackThread())
         return;
@@ -653,7 +649,7 @@ static jint android_hardware_fmradio_FmReceiverJNI_acquireFdNative
         (JNIEnv* env, jobject thiz, jstring path)
 {
     int fd;
-    int i, retval=0, err;
+    int i, err;
     char value[PROPERTY_VALUE_MAX] = {'\0'};
     char versionStr[40] = {'\0'};
     int init_success = 0;
@@ -695,6 +691,7 @@ static jint android_hardware_fmradio_FmReceiverJNI_acquireFdNative
        property_set("vendor.hw.fm.mode", "normal");
        /* Need to clear the hw.fm.init firstly */
        property_set("vendor.hw.fm.init", "0");
+#ifndef QCOM_NO_FM_FIRMWARE
        property_set("ctl.start", "fm_dl");
        sched_yield();
        for(i=0; i<45; i++) {
@@ -706,6 +703,11 @@ static jint android_hardware_fmradio_FmReceiverJNI_acquireFdNative
             usleep(WAIT_TIMEOUT);
          }
        }
+#else
+       property_set("vendor.hw.fm.init", "1");
+       usleep(WAIT_TIMEOUT);
+       init_success = 1;
+#endif
        ALOGE("init_success:%d after %f seconds \n", init_success, 0.2*i);
        if(!init_success) {
          property_set("ctl.stop", "fm_dl");
@@ -721,9 +723,6 @@ static jint android_hardware_fmradio_FmReceiverJNI_acquireFdNative
 static jint android_hardware_fmradio_FmReceiverJNI_closeFdNative
     (JNIEnv * env, jobject thiz, jint fd)
 {
-    int i = 0;
-    int cleanup_success = 0;
-    char retval =0;
     char value[PROPERTY_VALUE_MAX] = {'\0'};
 
     property_get("vendor.bluetooth.soc", value, NULL);
@@ -1217,6 +1216,7 @@ static jint android_hardware_fmradio_FmReceiverJNI_setNotchFilterNative(JNIEnv *
        else
           property_set("vendor.hw.fm.mode", "wa_disable");
 
+#ifndef QCOM_NO_FM_FIRMWARE
        property_set("ctl.start", "fm_dl");
        sched_yield();
        for(i=0; i<10; i++) {
@@ -1229,6 +1229,9 @@ static jint android_hardware_fmradio_FmReceiverJNI_setNotchFilterNative(JNIEnv *
           }
        }
        ALOGE("init_success:%d after %f seconds \n", init_success, 0.2*i);
+#else
+       usleep(WAIT_TIMEOUT);
+#endif
 
        property_get("vendor.notch.value", notch, NULL);
        ALOGE("Notch = %s",notch);
@@ -1262,7 +1265,6 @@ static jint android_hardware_fmradio_FmReceiverJNI_setAnalogModeNative(JNIEnv * 
 {
     int i=0;
     char value[PROPERTY_VALUE_MAX] = {'\0'};
-    char firmwareVersion[80];
 
     property_get("vendor.bluetooth.soc", value, NULL);
 
@@ -1825,3 +1827,4 @@ jint JNI_OnLoad(JavaVM *jvm, void *reserved)
     }
     return JNI_VERSION_1_6;
 }
+
